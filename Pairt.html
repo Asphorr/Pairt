@@ -1,0 +1,976 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pairt-v2.5 Advanced CLI Simulator</title>
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@300;400;500&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.0.4/pako.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #282a36;
+            --text-color: #f8f8f2;
+            --accent-color: #bd93f9;
+            --success-color: #50fa7b;
+            --warning-color: #ffb86c;
+            --error-color: #ff5555;
+            --comment-color: #6272a4;
+        }
+        body, html {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: 'Fira Code', monospace;
+            font-size: 14px;
+            line-height: 1.6;
+            overflow: hidden;
+        }
+        #container {
+            display: grid;
+            grid-template-rows: auto 1fr auto;
+            grid-template-columns: 1fr 200px;
+            height: 100%;
+            overflow: hidden;
+        }
+        #title-bar {
+            grid-column: 1 / -1;
+            background-color: var(--accent-color);
+            color: var(--bg-color);
+            padding: 5px 10px;
+            font-weight: 500;
+            text-align: center;
+            user-select: none;
+        }
+        #main-content {
+            display: grid;
+            grid-template-columns: 1fr;
+            background-image: 
+                radial-gradient(circle, rgba(255,255,255,.05) 1px, transparent 1px),
+                radial-gradient(circle, rgba(255,255,255,.05) 1px, transparent 1px);
+            background-size: 20px 20px;
+            background-position: 0 0, 10px 10px;
+            overflow: hidden;
+        }
+        #terminal {
+            padding: 10px;
+            overflow-y: auto;
+            scrollbar-width: thin;
+            scrollbar-color: var(--accent-color) var(--bg-color);
+        }
+        #terminal::-webkit-scrollbar {
+            width: 8px;
+        }
+        #terminal::-webkit-scrollbar-track {
+            background: var(--bg-color);
+        }
+        #terminal::-webkit-scrollbar-thumb {
+            background-color: var(--accent-color);
+            border-radius: 4px;
+        }
+        #output {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        #file-explorer {
+            background-color: rgba(255, 255, 255, 0.05);
+            padding: 10px;
+            overflow-y: auto;
+        }
+        #input-line {
+            display: flex;
+            align-items: center;
+            padding: 5px 0;
+        }
+        #prompt {
+            margin-right: 5px;
+            color: var(--accent-color);
+        }
+        #input {
+            flex-grow: 1;
+            background-color: transparent;
+            border: none;
+            color: var(--text-color);
+            font-family: 'Fira Code', monospace;
+            font-size: 14px;
+            outline: none;
+        }
+        #status-bar {
+            grid-column: 1 / -1;
+            background-color: var(--accent-color);
+            color: var(--bg-color);
+            padding: 5px 10px;
+            display: flex;
+            justify-content: space-between;
+            font-weight: 500;
+            user-select: none;
+        }
+        .cursor {
+            display: inline-block;
+            width: 8px;
+            height: 14px;
+            background-color: var(--text-color);
+            animation: blink 0.7s infinite;
+        }
+        @keyframes blink {
+            0% { opacity: 0; }
+            50% { opacity: 1; }
+            100% { opacity: 0; }
+        }
+        .file-item {
+            padding: 2px 5px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            transition: background-color 0.3s ease;
+        }
+        .file-item:hover {
+            background-color: rgba(255, 255, 255, 0.1);
+        }
+        .file-icon {
+            margin-right: 5px;
+            width: 16px;
+            height: 16px;
+        }
+        .command-output {
+            margin-bottom: 10px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--comment-color);
+            animation: fadeIn 0.3s ease-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .syntax-command { color: var(--accent-color); }
+        .syntax-arg { color: var(--warning-color); }
+        .syntax-string { color: var(--success-color); }
+        .line-number {
+            color: var(--comment-color);
+            margin-right: 10px;
+            user-select: none;
+        }
+        #suggestions {
+            position: absolute;
+            background-color: var(--bg-color);
+            border: 1px solid var(--accent-color);
+            max-height: 150px;
+            overflow-y: auto;
+            display: none;
+        }
+        .suggestion-item {
+            padding: 5px 10px;
+            cursor: pointer;
+        }
+        .suggestion-item:hover {
+            background-color: var(--accent-color);
+            color: var(--bg-color);
+        }
+        #theme-switcher {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            background-color: var(--accent-color);
+            color: var(--bg-color);
+            border: none;
+            padding: 5px 10px;
+            cursor: pointer;
+            font-family: 'Fira Code', monospace;
+        }
+        #process-monitor {
+            position: fixed;
+            top: 40px;
+            right: 10px;
+            background-color: rgba(0, 0, 0, 0.8);
+            border: 1px solid var(--accent-color);
+            padding: 10px;
+            max-width: 300px;
+            display: none;
+        }
+        .process-item {
+            margin-bottom: 5px;
+            padding: 5px;
+            background-color: rgba(255, 255, 255, 0.1);
+            border-radius: 3px;
+        }
+        #editor-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.8);
+            z-index: 1000;
+        }
+        #editor-content {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 80%;
+            height: 80%;
+            background-color: var(--bg-color);
+            border: 1px solid var(--accent-color);
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+        }
+        #editor-textarea {
+            flex-grow: 1;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            border: none;
+            font-family: 'Fira Code', monospace;
+            font-size: 14px;
+            resize: none;
+            outline: none;
+        }
+        #editor-controls {
+            margin-top: 10px;
+            display: flex;
+            justify-content: flex-end;
+        }
+        #editor-save, #editor-close {
+            margin-left: 10px;
+            padding: 5px 10px;
+            background-color: var(--accent-color);
+            color: var(--bg-color);
+            border: none;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <div id="title-bar">Pairt-v2.5 Advanced CLI Simulator</div>
+        <div id="main-content">
+            <div id="terminal">
+                <div id="output"></div>
+                <div id="input-line">
+                    <span id="prompt">guest@pairt:~$</span>
+                    <input type="text" id="input" autofocus>
+                    <span class="cursor"></span>
+                </div>
+                <div id="suggestions"></div>
+            </div>
+        </div>
+        <div id="file-explorer"></div>
+        <div id="status-bar">
+            <span id="current-directory">~</span>
+            <span id="clock"></span>
+        </div>
+    </div>
+    <button id="theme-switcher">Switch Theme</button>
+    <div id="process-monitor"></div>
+    <div id="editor-modal">
+        <div id="editor-content">
+            <textarea id="editor-textarea"></textarea>
+            <div id="editor-controls">
+                <button id="editor-save">Save</button>
+                <button id="editor-close">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const output = document.getElementById('output');
+        const input = document.getElementById('input');
+        const prompt = document.getElementById('prompt');
+        const fileExplorer = document.getElementById('file-explorer');
+        const currentDirectorySpan = document.getElementById('current-directory');
+        const clockSpan = document.getElementById('clock');
+        const suggestions = document.getElementById('suggestions');
+        const themeSwitcher = document.getElementById('theme-switcher');
+        const processMonitor = document.getElementById('process-monitor');
+        const editorModal = document.getElementById('editor-modal');
+        const editorTextarea = document.getElementById('editor-textarea');
+        const editorSave = document.getElementById('editor-save');
+        const editorClose = document.getElementById('editor-close');
+
+        const kernel = {
+            name: 'Pairt',
+            version: '2.5',
+            currentUser: 'guest',
+            currentDirectory: '/',
+            fileSystem: {
+                '/': {
+                    type: 'directory',
+                    owner: 'root',
+                    permissions: 'drwxr-xr-x',
+                    contents: {
+                        'home': { type: 'directory', owner: 'root', permissions: 'drwxr-xr-x', contents: {} },
+                        'bin': { type: 'directory', owner: 'root', permissions: 'drwxr-xr-x', contents: {} },
+                        'etc': { type: 'directory', owner: 'root', permissions: 'drwxr-xr-x', contents: {} },
+                        'var': { type: 'directory', owner: 'root', permissions: 'drwxr-xr-x', contents: {} },
+                        'welcome.txt': { type: 'file', owner: 'root', permissions: '-rw-r--r--', content: 'Welcome to Pairt-v2.5!' }
+                    }
+                }
+            },
+            users: {
+                'root': { password: 'toor', home: '/root' },
+                'guest': { password: '', home: '/home/guest' }
+            },
+            processes: [],
+            history: [],
+            historyIndex: 0,
+            installedPackages: ['core'],
+            networkInterfaces: {
+                'lo': { ip: '127.0.0.1', status: 'up' },
+                'eth0': { ip: '192.168.1.100', status: 'up' }
+            }
+        };
+
+        const themes = {
+            'default': {
+                '--bg-color': '#282a36',
+                '--text-color': '#f8f8f2',
+                '--accent-color': '#bd93f9',
+                '--success-color': '#50fa7b',
+                '--warning-color': '#ffb86c',
+                '--error-color': '#ff5555',
+                '--comment-color': '#6272a4'
+            },
+            'light': {
+                '--bg-color': '#f8f8f2',
+                '--text-color': '#282a36',
+                '--accent-color': '#6272a4',
+                '--success-color': '#50fa7b',
+                '--warning-color': '#ffb86c',
+                '--error-color': '#ff5555',
+                '--comment-color': '#bd93f9'
+            },
+            'cyberpunk': {
+                '--bg-color': '#000000',
+                '--text-color': '#00ff00',
+                '--accent-color': '#ff00ff',
+                '--success-color': '#00ffff',
+                '--warning-color': '#ffff00',
+                '--error-color': '#ff0000',
+                '--comment-color': '#0000ff'
+            }
+        };
+
+        let currentTheme = 'default';
+
+        function setTheme(themeName) {
+            const theme = themes[themeName];
+            for (const [property, value] of Object.entries(theme)) {
+                document.documentElement.style.setProperty(property, value);
+            }
+            currentTheme = themeName;
+        }
+
+        themeSwitcher.addEventListener('click', () => {
+            const themeNames = Object.keys(themes);
+            const nextThemeIndex = (themeNames.indexOf(currentTheme) + 1) % themeNames.length;
+            setTheme(themeNames[nextThemeIndex]);
+        });
+
+        function writeOutput(text, type = 'default') {
+            const outputDiv = document.createElement('div');
+            outputDiv.classList.add('command-output');
+            
+            const lines = text.split('\n');
+            lines.forEach((line, index) => {
+                const lineDiv = document.createElement('div');
+                const lineNumber = document.createElement('span');
+                lineNumber.classList.add('line-number');
+                lineNumber.textContent = `${index + 1}`.padStart(3, '0');
+                lineDiv.appendChild(lineNumber);
+
+                const content = document.createElement('span');
+                content.innerHTML = line;
+                lineDiv.appendChild(content);
+
+                outputDiv.appendChild(lineDiv);
+            });
+
+            switch (type) {
+                case 'error':
+                    outputDiv.style.color = 'var(--error-color)';
+                    break;
+                case 'success':
+                    outputDiv.style.color = 'var(--success-color)';
+                    break;
+                case 'warning':
+                    outputDiv.style.color = 'var(--warning-color)';
+                    break;
+            }
+
+            output.appendChild(outputDiv);
+            terminal.scrollTop = terminal.scrollHeight;
+        }
+
+        function updateFileExplorer() {
+            const currentDir = getDirectoryFromPath(kernel.currentDirectory);
+            fileExplorer.innerHTML = `<div class="file-item"><svg class="file-icon" viewBox="0 0 24 24"><path fill="currentColor" d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>..</div>`;
+            for (const [name, item] of Object.entries(currentDir.contents)) {
+                const icon = item.type === 'directory' ? 
+                    '<svg class="file-icon" viewBox="0 0 24 24"><path fill="currentColor" d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>' :
+                    '<svg class="file-icon" viewBox="0 0 24 24"><path fill="currentColor" d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>';
+                fileExplorer.innerHTML += `<div class="file-item">${icon}${name}</div>`;
+            }
+        }
+
+        function updateClock() {
+            const now = new Date();
+            clockSpan.textContent = now.toLocaleTimeString();
+        }
+
+        function syntaxHighlight(command) {
+            const parts = command.split(/\s+/);
+            return parts.map((part, index) => {
+                if (index === 0) return `<span class="syntax-command">${part}</span>`;
+                if (part.startsWith('"') && part.endsWith('"')) return `<span class="syntax-string">${part}</span>`;
+                return `<span class="syntax-arg">${part}</span>`;
+            }).join(' ');
+        }
+
+        function getDirectoryFromPath(path) {
+            const parts = path.split('/').filter(Boolean);
+            let current = kernel.fileSystem['/'];
+            for (const part of parts) {
+                if (current.contents[part] && current.contents[part].type === 'directory') {
+                    current = current.contents[part];
+                } else {
+                    return null;
+                }
+            }
+            return current;
+        }
+
+        function resolvePath(path) {
+            if (path.startsWith('/')) {
+                return path;
+            }
+            return `${kernel.currentDirectory}/${path}`.replace(/\/+/g, '/');
+        }
+
+        function compressContent(content) {
+            const compressed = pako.deflate(content);
+            return btoa(String.fromCharCode.apply(null, compressed));
+        }
+
+        function decompressContent(compressed) {
+            const binary = atob(compressed);
+            const data = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) {
+                data[i] = binary.charCodeAt(i);
+            }
+            return pako.inflate(data, { to: 'string' });
+        }
+
+        function startProcess(name, duration) {
+            const pid = kernel.processes.length + 1;
+            const process = { pid, name, duration, startTime: Date.now() };
+            kernel.processes.push(process);
+            updateProcessMonitor();
+            
+            setTimeout(() => {
+                kernel.processes = kernel.processes.filter(p => p.pid !== pid);
+                updateProcessMonitor();
+                writeOutput(`Process ${name} (PID: ${pid}) completed.`, 'success');
+            }, duration);
+
+            return pid;
+        }
+
+        function updateProcessMonitor() {
+            processMonitor.innerHTML = '<h3>Running Processes</h3>';
+            kernel.processes.forEach(process => {
+                const elapsed = Math.floor((Date.now() - process.startTime) / 1000);
+                const remaining = Math.max(0, Math.floor(process.duration / 1000 - elapsed));
+                processMonitor.innerHTML += `
+                    <div class="process-item">
+                        PID: ${process.pid} - ${process.name} (${remaining}s remaining)
+                    </div>
+                `;
+            });
+            processMonitor.style.display = kernel.processes.length > 0 ? 'block' : 'none';
+        }
+
+        const commands = {
+            help: () => {
+                writeOutput(`
+Available commands:
+  help              - Show this help message
+  ls [path]         - List directory contents
+  cd <path>         - Change directory
+  cat <file>        - Display file contents
+  touch <file>      - Create a new file
+  mkdir <dir>       - Create a new directory
+  rm <file/dir>     - Remove a file or directory
+  chmod <perm> <file> - Change file permissions
+  whoami            - Display current user
+  su <user>         - Switch user
+  clear             - Clear the terminal screen
+  echo <text>       - Display a line of text
+  date              - Display the current date and time
+  ifconfig          - Display network interfaces
+  ping <host>       - Simulate ping to a host
+  apt install <pkg> - Install a new package
+  apt list          - List installed packages
+  compress <file>   - Compress a file
+  decompress <file> - Decompress a file
+  ps                - List running processes
+  kill <pid>        - Terminate a process
+    edit <file>       - Edit a file in the text editor
+  run <script>      - Run a script file
+  man <command>     - Display manual for a command
+  exit              - Exit the CLI simulator
+`, 'success');
+            },
+            ls: (path = '.') => {
+                const targetPath = resolvePath(path);
+                const dir = getDirectoryFromPath(targetPath);
+                if (dir && dir.type === 'directory') {
+                    let output = `Contents of ${targetPath}:\n\n`;
+                    for (const [name, item] of Object.entries(dir.contents)) {
+                        const size = item.type === 'file' ? (item.content.length + ' bytes') : '<DIR>';
+                        output += `${item.permissions} ${item.owner} ${size.padEnd(10)} ${name}\n`;
+                    }
+                    writeOutput(output);
+                } else {
+                    writeOutput(`ls: cannot access '${path}': No such file or directory`, 'error');
+                }
+            },
+            cd: (path) => {
+                if (!path) {
+                    kernel.currentDirectory = kernel.users[kernel.currentUser].home;
+                } else if (path === '..') {
+                    const parts = kernel.currentDirectory.split('/').filter(Boolean);
+                    parts.pop();
+                    kernel.currentDirectory = `/${parts.join('/')}`;
+                } else {
+                    const targetPath = resolvePath(path);
+                    const dir = getDirectoryFromPath(targetPath);
+                    if (dir && dir.type === 'directory') {
+                        kernel.currentDirectory = targetPath;
+                    } else {
+                        writeOutput(`cd: ${path}: No such file or directory`, 'error');
+                        return;
+                    }
+                }
+                prompt.textContent = `${kernel.currentUser}@pairt:${kernel.currentDirectory}$`;
+                currentDirectorySpan.textContent = kernel.currentDirectory;
+                updateFileExplorer();
+            },
+            cat: (file) => {
+                const targetPath = resolvePath(file);
+                const dir = getDirectoryFromPath(targetPath.substring(0, targetPath.lastIndexOf('/')));
+                const fileName = targetPath.split('/').pop();
+                if (dir && dir.contents[fileName] && dir.contents[fileName].type === 'file') {
+                    const content = dir.contents[fileName].compressed ? 
+                        decompressContent(dir.contents[fileName].content) :
+                        dir.contents[fileName].content;
+                    writeOutput(content);
+                } else {
+                    writeOutput(`cat: ${file}: No such file or directory`, 'error');
+                }
+            },
+            touch: (file) => {
+                const targetPath = resolvePath(file);
+                const dir = getDirectoryFromPath(targetPath.substring(0, targetPath.lastIndexOf('/')));
+                const fileName = targetPath.split('/').pop();
+                if (dir) {
+                    if (dir.contents[fileName]) {
+                        writeOutput(`touch: cannot touch '${file}': File exists`, 'warning');
+                    } else {
+                        dir.contents[fileName] = { type: 'file', owner: kernel.currentUser, permissions: '-rw-r--r--', content: '', compressed: false };
+                        writeOutput(`Created file: ${file}`, 'success');
+                    }
+                } else {
+                    writeOutput(`touch: cannot touch '${file}': No such file or directory`, 'error');
+                }
+                updateFileExplorer();
+            },
+            mkdir: (dir) => {
+                const targetPath = resolvePath(dir);
+                const parentDir = getDirectoryFromPath(targetPath.substring(0, targetPath.lastIndexOf('/')));
+                const dirName = targetPath.split('/').pop();
+                if (parentDir) {
+                    if (parentDir.contents[dirName]) {
+                        writeOutput(`mkdir: cannot create directory '${dir}': File exists`, 'warning');
+                    } else {
+                        parentDir.contents[dirName] = { type: 'directory', owner: kernel.currentUser, permissions: 'drwxr-xr-x', contents: {} };
+                        writeOutput(`Created directory: ${dir}`, 'success');
+                    }
+                } else {
+                    writeOutput(`mkdir: cannot create directory '${dir}': No such file or directory`, 'error');
+                }
+                updateFileExplorer();
+            },
+            rm: (path) => {
+                const targetPath = resolvePath(path);
+                const parentDir = getDirectoryFromPath(targetPath.substring(0, targetPath.lastIndexOf('/')));
+                const name = targetPath.split('/').pop();
+                if (parentDir && parentDir.contents[name]) {
+                    delete parentDir.contents[name];
+                    writeOutput(`Removed: ${path}`, 'success');
+                } else {
+                    writeOutput(`rm: cannot remove '${path}': No such file or directory`, 'error');
+                }
+                updateFileExplorer();
+            },
+            chmod: (perm, file) => {
+                const targetPath = resolvePath(file);
+                const dir = getDirectoryFromPath(targetPath.substring(0, targetPath.lastIndexOf('/')));
+                const fileName = targetPath.split('/').pop();
+                if (dir && dir.contents[fileName]) {
+                    if (/^[0-7]{3}$/.test(perm)) {
+                        const permString = parseInt(perm, 8).toString(2).padStart(9, '0')
+                            .replace(/0/g, '-').replace(/1/g, 'r')
+                            .replace(/(?<=...)./g, w => w === 'r' ? 'w' : w)
+                            .replace(/(?<=......).+/g, x => x === 'rw-' ? 'rwx' : x);
+                        dir.contents[fileName].permissions = (dir.contents[fileName].type === 'directory' ? 'd' : '-') + permString;
+                        writeOutput(`Changed permissions of ${file} to ${perm}`, 'success');
+                    } else {
+                        writeOutput(`chmod: invalid mode: '${perm}'`, 'error');
+                    }
+                } else {
+                    writeOutput(`chmod: cannot access '${file}': No such file or directory`, 'error');
+                }
+            },
+            whoami: () => {
+                writeOutput(kernel.currentUser);
+            },
+            su: (user) => {
+                if (kernel.users[user]) {
+                    if (user === 'root') {
+                        const password = prompt('Enter root password:');
+                        if (password !== kernel.users.root.password) {
+                            writeOutput('su: Authentication failure', 'error');
+                            return;
+                        }
+                    }
+                    kernel.currentUser = user;
+                    kernel.currentDirectory = kernel.users[user].home;
+                    prompt.textContent = `${kernel.currentUser}@pairt:${kernel.currentDirectory}$`;
+                    currentDirectorySpan.textContent = kernel.currentDirectory;
+                    writeOutput(`Switched to user: ${user}`, 'success');
+                    updateFileExplorer();
+                } else {
+                    writeOutput(`su: user ${user} does not exist`, 'error');
+                }
+            },
+            clear: () => {
+                output.innerHTML = '';
+            },
+            echo: (...text) => {
+                writeOutput(text.join(' '));
+            },
+            date: () => {
+                writeOutput(new Date().toString());
+            },
+            ifconfig: () => {
+                let output = '';
+                for (const [name, info] of Object.entries(kernel.networkInterfaces)) {
+                    output += `${name}: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 1500\n`;
+                    output += `        inet ${info.ip}  netmask 255.255.255.0  broadcast 192.168.1.255\n`;
+                    output += `        ether 00:00:00:00:00:00  txqueuelen 1000  (Ethernet)\n\n`;
+                }
+                writeOutput(output);
+            },
+            ping: (host) => {
+                if (host) {
+                    writeOutput(`PING ${host} (127.0.0.1) 56(84) bytes of data.`);
+                    let count = 0;
+                    const interval = setInterval(() => {
+                        writeOutput(`64 bytes from localhost (127.0.0.1): icmp_seq=${count + 1} ttl=64 time=0.${Math.floor(Math.random() * 100)} ms`);
+                        count++;
+                        if (count >= 4) {
+                            clearInterval(interval);
+                            writeOutput(`\n--- ${host} ping statistics ---`);
+                            writeOutput(`4 packets transmitted, 4 received, 0% packet loss, time 3ms`);
+                            writeOutput(`rtt min/avg/max/mdev = 0.035/0.035/0.035/0.000 ms`);
+                        }
+                    }, 1000);
+                } else {
+                    writeOutput('ping: usage error: Destination address required', 'error');
+                }
+            },
+            apt: (action, pkg) => {
+                if (action === 'install') {
+                    if (pkg) {
+                        if (kernel.installedPackages.includes(pkg)) {
+                            writeOutput(`${pkg} is already installed.`, 'warning');
+                        } else {
+                            const pid = startProcess(`Installing ${pkg}`, 5000);
+                            writeOutput(`Started installation of ${pkg} (PID: ${pid})`);
+                        }
+                    } else {
+                        writeOutput('apt install: you must specify a package to install', 'error');
+                    }
+                } else if (action === 'list') {
+                    writeOutput('Installed packages:\n' + kernel.installedPackages.join('\n'));
+                } else {
+                    writeOutput(`apt: '${action}' is not a valid action. Use 'install' or 'list'.`, 'error');
+                }
+            },
+            compress: (file) => {
+                const targetPath = resolvePath(file);
+                const dir = getDirectoryFromPath(targetPath.substring(0, targetPath.lastIndexOf('/')));
+                const fileName = targetPath.split('/').pop();
+                if (dir && dir.contents[fileName] && dir.contents[fileName].type === 'file') {
+                    if (!dir.contents[fileName].compressed) {
+                        dir.contents[fileName].content = compressContent(dir.contents[fileName].content);
+                        dir.contents[fileName].compressed = true;
+                        writeOutput(`File ${file} compressed successfully.`, 'success');
+                    } else {
+                        writeOutput(`File ${file} is already compressed.`, 'warning');
+                    }
+                } else {
+                    writeOutput(`compress: cannot access '${file}': No such file or directory`, 'error');
+                }
+            },
+            decompress: (file) => {
+                const targetPath = resolvePath(file);
+                const dir = getDirectoryFromPath(targetPath.substring(0, targetPath.lastIndexOf('/')));
+                const fileName = targetPath.split('/').pop();
+                if (dir && dir.contents[fileName] && dir.contents[fileName].type === 'file') {
+                    if (dir.contents[fileName].compressed) {
+                        dir.contents[fileName].content = decompressContent(dir.contents[fileName].content);
+                        dir.contents[fileName].compressed = false;
+                        writeOutput(`File ${file} decompressed successfully.`, 'success');
+                    } else {
+                        writeOutput(`File ${file} is not compressed.`, 'warning');
+                    }
+                } else {
+                    writeOutput(`decompress: cannot access '${file}': No such file or directory`, 'error');
+                }
+            },
+            ps: () => {
+                if (kernel.processes.length > 0) {
+                    let output = 'PID\tNAME\t\tTIME\n';
+                    kernel.processes.forEach(process => {
+                        const elapsed = Math.floor((Date.now() - process.startTime) / 1000);
+                        output += `${process.pid}\t${process.name.padEnd(15)}${elapsed}s\n`;
+                    });
+                    writeOutput(output);
+                } else {
+                    writeOutput('No processes running.');
+                }
+            },
+            kill: (pid) => {
+                const processIndex = kernel.processes.findIndex(p => p.pid === parseInt(pid));
+                if (processIndex !== -1) {
+                    kernel.processes.splice(processIndex, 1);
+                    updateProcessMonitor();
+                    writeOutput(`Process with PID ${pid} terminated.`, 'success');
+                } else {
+                    writeOutput(`kill: (${pid}) - No such process`, 'error');
+                }
+            },
+            edit: (file) => {
+                const targetPath = resolvePath(file);
+                const dir = getDirectoryFromPath(targetPath.substring(0, targetPath.lastIndexOf('/')));
+                const fileName = targetPath.split('/').pop();
+                if (dir && dir.contents[fileName] && dir.contents[fileName].type === 'file') {
+                    editorTextarea.value = dir.contents[fileName].compressed ? 
+                        decompressContent(dir.contents[fileName].content) :
+                        dir.contents[fileName].content;
+                    editorModal.style.display = 'block';
+                    editorTextarea.focus();
+
+                    editorSave.onclick = () => {
+                        dir.contents[fileName].content = editorTextarea.value;
+                        dir.contents[fileName].compressed = false;
+                        editorModal.style.display = 'none';
+                        writeOutput(`File ${file} saved successfully.`, 'success');
+                    };
+
+                    editorClose.onclick = () => {
+                        editorModal.style.display = 'none';
+                    };
+                } else {
+                    writeOutput(`edit: cannot access '${file}': No such file or directory`, 'error');
+                }
+            },
+            run: (script) => {
+                const targetPath = resolvePath(script);
+                const dir = getDirectoryFromPath(targetPath.substring(0, targetPath.lastIndexOf('/')));
+                const fileName = targetPath.split('/').pop();
+                if (dir && dir.contents[fileName] && dir.contents[fileName].type === 'file') {
+                    const content = dir.contents[fileName].compressed ? 
+                        decompressContent(dir.contents[fileName].content) :
+                        dir.contents[fileName].content;
+                    const lines = content.split('\n');
+                    writeOutput(`Running script: ${script}`, 'success');
+                    lines.forEach(line => {
+                        if (line.trim() !== '') {
+                            writeOutput(`$ ${line}`);
+                            executeCommand(line);
+                        }
+                    });
+                } else {
+                    writeOutput(`run: cannot access '${script}': No such file or directory`, 'error');
+                }
+            },
+            man: (command) => {
+                const manPages = {
+                    ls: 'ls - list directory contents',
+                    cd: 'cd - change the working directory',
+                    cat: 'cat - concatenate files and print on the standard output',
+                    // Add more manual pages for other commands
+                };
+
+                if (manPages[command]) {
+                    writeOutput(manPages[command]);
+                } else {
+                    writeOutput(`No manual entry for ${command}`, 'error');
+                }
+            },
+            exit: () => {
+                writeOutput('Thank you for using Pairt-v2.5. Goodbye!', 'success');
+                input.disabled = true;
+            }
+        };
+
+        function executeCommand(command) {
+            const [cmd, ...args] = command.trim().split(/\s+/);
+            writeOutput(`${prompt.textContent} ${syntaxHighlight(command)}`);
+            if (commands[cmd]) {
+                commands[cmd](...args);
+            } else {
+                writeOutput(`${cmd}: command not found`, 'error');
+            }
+        }
+
+        function startup() {
+            const asciiArt = `
+ ____       _      ___   ____    _____   ____   ____  
+|  _ \\ __ _(_)_ __|_ _| |___ \\  |___ /  | ___| | ___| 
+| |_) / _\` | | '__| |    __) |   |_ \\  |___ \\ |___ \\ 
+|  __/ (_| | | |  | |   / __/   ___) |  ___) | ___) |
+|_|   \\__,_|_|_| |___| |_____| |____/  |____/ |____/ 
+`;
+            writeOutput(asciiArt, 'accent');
+            writeOutput(`
+Welcome to Pairt-v2.5 Advanced CLI Simulator
+Copyright (C) 2023 Virtual Systems Inc.
+
+Kernel Name: ${kernel.name}
+Version: ${kernel.version}
+
+New features in v2.5:
+• Process management system
+• Simple text editor
+• File compression
+• Basic scripting capabilities
+• Enhanced networking utilities
+• Improved package management
+• User manual system
+
+Type 'help' for a list of available commands.
+`, 'success');
+        }
+
+        function showSuggestions(input) {
+            const inputParts = input.split(' ');
+            const lastPart = inputParts[inputParts.length - 1];
+            
+            let suggestionList = [];
+            if (inputParts.length === 1) {
+                suggestionList = Object.keys(commands).filter(cmd => cmd.startsWith(lastPart));
+            } else {
+                const currentDir = getDirectoryFromPath(kernel.currentDirectory);
+                if (currentDir) {
+                    suggestionList = Object.keys(currentDir.contents).filter(item => item.startsWith(lastPart));
+                }
+            }
+
+            if (suggestionList.length > 0) {
+                suggestions.innerHTML = suggestionList.map(s => `<div class="suggestion-item">${s}</div>`).join('');
+                suggestions.style.display = 'block';
+            } else {
+                suggestions.style.display = 'none';
+            }
+        }
+
+        input.addEventListener('input', () => {
+            showSuggestions(input.value);
+        });
+
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                const command = input.value;
+                if (command.trim()) {
+                    kernel.history.push(command);
+                    kernel.historyIndex = kernel.history.length;
+                    executeCommand(command);
+                }
+                input.value = '';
+                suggestions.style.display = 'none';
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                if (kernel.historyIndex > 0) {
+                    kernel.historyIndex--;
+                    input.value = kernel.history[kernel.historyIndex];
+                }
+            } else if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                if (kernel.historyIndex < kernel.history.length - 1) {
+                    kernel.historyIndex++;
+                    input.value = kernel.history[kernel.historyIndex];
+                } else {
+                    kernel.historyIndex = kernel.history.length;
+                    input.value = '';
+                }
+            } else if (e.key === 'Tab') {
+                e.preventDefault();
+                if (suggestions.style.display === 'block') {
+                    const firstSuggestion = suggestions.firstChild.textContent;
+                    const inputParts = input.value.split(' ');
+                    inputParts[inputParts.length - 1] = firstSuggestion;
+                    input.value = inputParts.join(' ');
+                    suggestions.style.display = 'none';
+                }
+            }
+        });
+
+        suggestions.addEventListener('click', (e) => {
+            if (e.target.classList.contains('suggestion-item')) {
+                const suggestion = e.target.textContent;
+                const inputParts = input.value.split(' ');
+                inputParts[inputParts.length - 1] = suggestion;
+                input.value = inputParts.join(' ');
+                suggestions.style.display = 'none';
+                input.focus();
+            }
+        });
+
+        fileExplorer.addEventListener('click', (e) => {
+            if (e.target.classList.contains('file-item') || e.target.parentElement.classList.contains('file-item')) {
+                const fileName = e.target.textContent || e.target.parentElement.textContent;
+                if (fileName === '..') {
+                    executeCommand('cd ..');
+                } else {
+                    const currentDir = getDirectoryFromPath(kernel.currentDirectory);
+                    if (currentDir.contents[fileName].type === 'directory') {
+                        executeCommand(`cd ${fileName}`);
+                    } else {
+                        executeCommand(`cat ${fileName}`);
+                    }
+                }
+            }
+        });
+
+        function addCommand(name, func) {
+            commands[name] = func;
+        }
+
+        // Example of adding a custom command
+        addCommand('hello', (name = 'World') => {
+            writeOutput(`Hello, ${name}!`, 'success');
+        });
+
+        // Initialize the simulator
+        startup();
+        updateFileExplorer();
+        setInterval(updateClock, 1000);
+        setInterval(updateProcessMonitor, 1000);
+    </script>
+</body>
+</html>
